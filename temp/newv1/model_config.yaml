@@ -1,0 +1,20 @@
+ddqn:
+  learning_rate: 0.001
+  gamma: 0.99
+  epsilon: 1.0
+  epsilon_decay: 0.995
+  min_epsilon: 0.01
+  batch_size: 32
+  memory_size: 10000
+
+sarsa:
+  learning_rate: 0.001
+  gamma: 0.95
+  epsilon: 1.0
+  epsilon_decay: 0.99
+  min_epsilon: 0.05
+
+a2c:
+  learning_rate: 0.0001
+  gamma: 0.99
+  entropy_beta: 0.01

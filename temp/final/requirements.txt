@@ -1,0 +1,4 @@
+google-cloud
+google-generativeai
+PyYAML
+python-dotenv
