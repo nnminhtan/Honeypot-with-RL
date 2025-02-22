@@ -4,3 +4,4 @@ temp/.DS_Store
 .DS_Store
 .env
 /temp/final/.env
+/final/lib

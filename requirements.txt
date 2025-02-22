@@ -4,3 +4,7 @@ gym
 matplotlib 
 numpy 
 pandas
+google-cloud 
+google-generativeai 
+PyYAML
+python-dotenv
