@@ -1,23 +1,16 @@
 # Use Ubuntu as the base image
 FROM ubuntu:22.04
 
-# Set environment variables to ensure non-interactive installs (prevents prompts)
+# Set environment variables to ensure non-interactive installs
 ENV DEBIAN_FRONTEND=noninteractive
-# Install SSH
-RUN apt update && apt install -y openssh-server
 
-# # Set up SSH
-# RUN mkdir /var/run/sshd
+# Unminimize Ubuntu (makes sure basic utilities like `sudo` are available)
+RUN yes | unminimize
 
-# Create a new user with a password
-RUN useradd -m -s /bin/bash honeypotuser && echo "honeypotuser:honeypotpass" | chpasswd
-
-# Allow SSH login for the user
-RUN mkdir -p /var/run/sshd
-
-# Update and install dependencies for Python and pip
-RUN apt-get update && \
-    apt-get install -y \
+# Install SSH, sudo, and dependencies
+RUN apt update && apt install -y \
+    openssh-server \
+    sudo \
     wget \
     curl \
     build-essential \
@@ -35,8 +28,27 @@ RUN apt-get update && \
     liblzma-dev \
     python3-dev \
     python3-venv \
-    git && \
-    apt-get clean
+    git \
+    ca-certificates \
+    gnupg && \
+    apt clean
+
+# Create a new user with a password and add to sudo group
+RUN useradd -m -s /bin/bash honeypotuser && \
+    echo "honeypotuser:honeypotpass" | chpasswd && \
+    usermod -aG sudo honeypotuser
+
+# Ensure SSH login is allowed for the new user
+RUN mkdir -p /var/run/sshd
+
+# Install Docker
+RUN install -m 0755 -d /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | tee /etc/apt/keyrings/docker.asc > /dev/null && \
+    chmod a+r /etc/apt/keyrings/docker.asc && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    apt update && \
+    apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin && \
+    apt clean
 
 # Install Python 3.11
 RUN wget https://www.python.org/ftp/python/3.11.0/Python-3.11.0.tgz && \
@@ -62,30 +74,24 @@ RUN python3.11 -m pip --version
 RUN update-alternatives --install /usr/bin/python3 python3 /usr/local/bin/python3.11 1
 RUN update-alternatives --install /usr/bin/pip pip /usr/local/bin/pip3.11 1
 
-# Create a virtual environment (optional)
-RUN python3.11 -m venv /env
+# Create a virtual environment
+RUN python3 -m venv /env
 ENV PATH="/env/bin:$PATH"
 
-# Set the working directory (you can change this based on your project structure)
-WORKDIR /app
-# Install dependencies (if you have requirements.txt)
+# Add project files
 ADD final /app/
-# Set working directory
 WORKDIR /app
 
 # Create history.txt and set permissions
 RUN touch /app/history.txt && chmod 666 /app/history.txt
 
-# RUN source bin/activate
+# Install dependencies
+COPY requirements.txt .
+RUN pip install -r requirements.txt
 
-COPY requirements.txt . 
-RUN python3.11 -m pip install -r requirements.txt
-
-# Expose a port (for SSH or your web app, adjust as necessary)
+# Expose port 22 for SSH
 # EXPOSE 22
 
-# # Keep the container running
-# CMD ["/usr/sbin/sshd", "-D"]
-
-# Start the container with bash (you can replace this with other commands if needed)
-CMD ["/bin/bash"]
+# Start SSH when the container starts
+CMD ["/usr/sbin/sshd", "-D"]
+# CMD ["/bin/bash"]
