@@ -180,23 +180,28 @@ class testEnv(gym.Env):
     #     return self.state, reward, done, {}
     def step(self, action):
         assert self.action_space.contains(action), f"Invalid action: {action}"
-        
-        logging.info(f"Agent chose action: {action}")  # ✅ Debug: Print chosen action
-    
-        placement_reward = 0
-        if self.step_count % self.placement_interval == 0:
-            placement_reward = self.place_honeypot(action)
-    
-        reward = placement_reward
+
+        # Place a honeypot with associated cost and get reward
+        placement_reward = self.place_honeypot(action)
+
+        # Encourage early honeypot placement (Bonus for placing sooner)
+        if np.sum(self.honeypot_positions) < self.num_honeypots:
+            placement_reward += max(0, 5 - np.sum(self.honeypot_positions))  # Extra reward for early placement
+
+        # Simulate an attack and get the reward
+        attack_reward = self.simulate_attack()
+
+        # Extra bonus for stopping attackers early
+        if attack_reward > 0:
+            attack_reward += max(0, 3 - np.sum(self.honeypot_positions))  # Higher reward if fewer honeypots are placed
+
+        # Total reward combines placement and attack outcomes
+        reward = placement_reward + attack_reward
+        done = np.sum(self.honeypot_positions) >= self.num_honeypots
+
+        # Update the state (e.g., vulnerabilities or honeypot positions)
         self.state = np.random.rand(self.num_nodes) * (1 - self.honeypot_positions)
-        self.step_count += 1
-    
-        if self.honeypot_positions[action] == 1 and action == self.attacker_position:
-            self.attack_detected[action] = True  
-    
-        done = self.step_count >= self.num_honeypots * self.placement_interval
-    
-        self.visualize()
+
         return self.state, reward, done, {}
     
     def visualize(self):

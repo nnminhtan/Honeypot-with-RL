@@ -87,10 +87,14 @@ def main():
 
     while True:
         try:
-            # Print the dynamic prompt before the user input without the extra symbols
-            # print(f"[{user}@{host}:~]$", end=' ')  # Adjust the prompt display
-            user_input = input()  # Get user input without the extra symbols
+                
+        #     # Print the dynamic prompt before the user input without the extra symbols
+        #     # print(f"[{user}@{host}:~]$", end=' ')  # Adjust the prompt display
+            print("Enter a command:")
+            user_input = input(f"{user}@{host}:~$ ").strip()
 
+            # user_input = input(f"{user}@{host}:~$ ")
+            print(f"You entered: {user_input}")
             # Generate a response based on user input
             prompt_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages]) + f"\nuser: {user_input}\n"
 
@@ -136,5 +140,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

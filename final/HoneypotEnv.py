@@ -1,142 +1,93 @@
-import google.generativeai as genai
-from dotenv import load_dotenv
-import argparse
-import requests
-from datetime import datetime
-import yaml
-import os
+import gym
+from gym import spaces
+import numpy as np
+import matplotlib.pyplot as plt
 
-#load environment variables from .env file
-load_dotenv()
-api_key = os.getenv("API_KEY")
+class HoneypotEnv(gym.Env):
+    def __init__(self, num_nodes, num_honeypots, honeypot_cost, malicious_ips):
+        super(HoneypotEnv, self).__init__()
+        self.num_nodes = num_nodes
+        self.num_honeypots = num_honeypots
+        self.honeypot_cost = honeypot_cost  # Cost per honeypot placement
+        self.malicious_ips = malicious_ips  # List of malicious IP addresses (from the CSV)
+        self.action_space = spaces.Discrete(num_nodes)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(num_nodes,), dtype=np.float32)
 
-#configure the generative AI with the API key
-genai.configure(api_key=api_key)
+        self.state = None
+        self.honeypot_positions = np.zeros(num_nodes)
+        self.vulnerabilities = np.random.rand(num_nodes)
+        self.attacker_position = np.random.choice(num_nodes)  # Initial attacker position
 
-today = datetime.now()
-#open history file for logging
-last_login_placeholder = "Last login: {last_login}"
-def generate_last_login():
-    try:
-        # Fetch IP and location data
-        response = requests.get("https://ipinfo.io")
-        data = response.json()
+    def reset(self):
+        self.state = np.random.rand(self.num_nodes)
+        self.honeypot_positions = np.zeros(self.num_nodes)
+        self.vulnerabilities = np.random.rand(self.num_nodes)
+        self.attacker_position = np.random.choice(self.num_nodes)
+        return self.state
+
+    def place_honeypot(self, action):
+        """Place a honeypot with a cost, if we haven't reached the honeypot limit."""
+        if np.sum(self.honeypot_positions) < self.num_honeypots and self.honeypot_positions[action] == 0:
+            self.honeypot_positions[action] = 1
+            placement_reward = 1.0 + self.vulnerabilities[action]  # Reward for strategic placement
+            return placement_reward - self.honeypot_cost  # Apply placement cost
+        else:
+            return self.honeypot_cost  # Penalty if exceeding honeypot limits or redundant placement
+
+    def simulate_attack(self):
+        """Move the attacker to a new node each step and check for interception."""
+        self.attacker_position = np.random.choice(self.num_nodes)
         
-        # Get IP and other location details
-        ip_address = data.get("ip", "unknown")
-        country = data.get("country")
-        region = data.get("region")
-        city = data.get("city")
-
-        # Get current date and time
-        current_time = datetime.now().strftime("%a %b %d %H:%M:%S %Y")
+        # Check if the attacker's IP is malicious (based on provided malicious_ips)
+        # Simulate mapping each node position to an IP address, here assuming nodes are mapped to IPs like "SrcIP1", "SrcIP2", etc.
+        attacker_ip = f"Src IP{self.attacker_position + 1}"  # Example: mapping node to an IP (adjust logic as needed)
+        is_malicious = attacker_ip in self.malicious_ips
         
-        # Create the last login string
-        # last_login_string = f"Last login: {current_time} from {ip_address}"
-        return last_login_placeholder.format(last_login=f"{current_time} from {ip_address} in {country}, {region}, {city}")
+        if self.honeypot_positions[self.attacker_position] == 1:  # Honeypot intercepts attacker
+            if is_malicious:
+                return 5.0  # High reward for intercepting malicious traffic
+            else:
+                return -1.0  # Penalty for intercepting normal traffic
+        else:
+            return -1.0  # Penalty if the attacker reaches an unprotected node
 
-    except requests.RequestException:
-        return last_login_placeholder.format(last_login=f"{current_time} from {'192.168.1.1'} in {'Monke country'}, {'Monke region'}, {'Monke city'}")
+    def step(self, action):
+        assert self.action_space.contains(action), f"Invalid action: {action}"
 
-history = open("history.txt", "a+", encoding="utf-8")
+        # Place a honeypot with associated cost and get reward
+        placement_reward = self.place_honeypot(action)
 
-if os.stat('history.txt').st_size == 0:
-    #if empty then load personality settings from a YAML file
-    with open('personalitySSH.yml', 'r', encoding="utf-8") as file:
-        identity = yaml.safe_load(file)
+        # Simulate an attack and get the reward
+        attack_reward = self.simulate_attack()
 
-    identity = identity['personality'] #get personality
-    prompt = identity['prompt'] #get prompt
-    
-    prompt += (
-    f"Example 1.\n{generate_last_login()}\nbrian@biolab:~$ \n"
-    f"Example 2.\n{generate_last_login()}\nkatherin@aicenter:~$ \n"
-    f"Example 3.\n{generate_last_login()}\nwalter@strato:~$ "
-    )
-else:
-    #if not empty then write a message indicating session continuation
-    history.write("\nHere the session stopped. Now you will start it again from the beginning with the same user. You must respond just with starting message and nothing more.\n")
-    history.seek(0)
-    prompt = history.read()
+        # Total reward combines placement and attack outcomes
+        reward = placement_reward + attack_reward
+        done = np.sum(self.honeypot_positions) >= self.num_honeypots
 
-def main():
-    #create a parser for cli args
-    parser = argparse.ArgumentParser(description="Simple command line with Gemini (Google AI)")
-    args, unknown = parser.parse_known_args()
+        # Update the state (e.g., vulnerabilities or honeypot positions)
+        self.state = np.random.rand(self.num_nodes) * (1 - self.honeypot_positions)
 
-    #create the initial prompt for the AI model in this case is gemini-1.5-flash
-    initial_prompt = f"You are a Linux OS terminal. Your personality is: {prompt}\n" \
-                     f"Always respond with realistic terminal output based on user commands.\n"
+        return self.state, reward, done, {}
 
-    messages = [{"role": "system", "content": initial_prompt}]
-    #write into history
-    logs = open("history.txt", "a+", encoding="utf-8")
-    #if history empty
-    if os.stat('history.txt').st_size == 0:
-        for msg in messages:
-            history.write(msg["content"])
-    else:
-        history.write("The session continues in the following lines.\n\n")
-    # history.close()
+    def render(self, mode="human"):
+        print(f"Honeypot positions: {self.honeypot_positions}")
+        print(f"Attacker position: {self.attacker_position}")
+        print(f"Node vulnerabilities: {self.vulnerabilities}")
 
-    model = genai.GenerativeModel("gemini-1.5-flash") #set the model
+    def visualize(self):
+        plt.figure(figsize=(10, 2))
+        for i in range(self.num_nodes):
+            color = 'blue' if self.honeypot_positions[i] == 1 else 'red'
+            plt.scatter(i, 1, s=100 * self.vulnerabilities[i], color=color)
+            plt.text(i, 1.1, f"{self.vulnerabilities[i]:.2f}", ha='center', fontsize=9)
 
-    # Initialize dynamic user and host variables
-    user = "user"  # Default user
-    host = "awesome-server"  # Default host
+        # Mark attacker position
+        plt.scatter(self.attacker_position, 1, color='black', marker='x', s=200, label="Attacker")
 
-    while True:
-        try:
-                
-        #     # Print the dynamic prompt before the user input without the extra symbols
-        #     # print(f"[{user}@{host}:~]$", end=' ')  # Adjust the prompt display
-            print("Enter a command:")
-            user_input = input(f"{user}@{host}:~$ ").strip()
-
-            # user_input = input(f"{user}@{host}:~$ ")
-            print(f"You entered: {user_input}")
-            # Generate a response based on user input
-            prompt_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages]) + f"\nuser: {user_input}\n"
-
-            response = model.generate_content(prompt_text)
-            msg = response.text.strip()
-            msg = msg.replace("```", "").strip()  # Remove the code block indicators
-
-
-            if not msg:
-                print("No response generated. Please try a different command.")
-                continue
-
-            # Append the assistant's response to messages
-            message = {"content": msg, "role": 'assistant'}
-            messages.append(message)
-
-            # Extract username and host from the assistant's response if included
-            if "@" in msg:
-                parts = msg.split()
-                for part in parts:
-                    if "@" in part:
-                        user_host = part.split("@")
-                        if len(user_host) == 2:
-                            user, host = user_host  # Update user and host
-
-            # Log interaction
-            logs = open("history.txt", "a+", encoding="utf-8")
-            logs.write(f"assistant: {message['content']}\n")
-            logs.close()
-
-            # Print the assistant's response
-            print(message['content'], end=' ')
-
-            # Log user input
-            logs = open("history.txt", "a+", encoding="utf-8")
-            logs.write(f"user: {user_input}\n")
-            logs.close()
-
-        except KeyboardInterrupt:
-            print("")
-            break
-
-
-if __name__ == "__main__":
-    main()
+        plt.plot(range(self.num_nodes), [1] * self.num_nodes, 'k--', linewidth=0.5)
+        plt.ylim(0.8, 1.2)
+        plt.xticks(range(self.num_nodes), [f'Node {i+1}' for i in range(self.num_nodes)])
+        plt.yticks([])
+        plt.title("Honeypot Deployment Visualization")
+        plt.legend(loc="upper center", bbox_to_anchor=(0.5, -0.05), ncol=5)
+        plt.show()
