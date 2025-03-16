@@ -39,7 +39,10 @@ def select_best_model(evaluation_csv):
 def train_best_model(best_model_name, config):
     malicious_ips = load_malicious_ips('ip_prediction_output.csv')
     env = testEnv(num_nodes=10, num_honeypots=4, honeypot_cost=0.5, malicious_ips=malicious_ips)
-
+    while env.active_honeypots == 0:
+        print("Waiting for honeypot placement...")
+        env.step(0)  # Take a dummy step to allow placement
+        time.sleep(1)
     # Wait until at least one honeypot is deployed
     while not env.active_honeypots:
         print("Waiting for intruder activity...")
@@ -50,8 +53,8 @@ def train_best_model(best_model_name, config):
     agent_classes = {"ddqn": DDQNAgent, "sarsa": SARSAAgent, "a2c": A2CAgent}
     agent = agent_classes[best_model_name]((env.observation_space.shape[0],), env.action_space.n, config[best_model_name])
 
-    max_episodes = 10
-    max_steps = 200
+    max_episodes = 1
+    max_steps = 500
     episode_rewards = []
 
     for episode in range(max_episodes):
@@ -75,8 +78,8 @@ def train_best_model(best_model_name, config):
             total_reward += reward
             step_count += 1
 
-            if step_count % 5 == 0:
-                env.visualize()
+            # if step_count % 5 == 0:
+            #     env.visualize()
 
         episode_rewards.append(total_reward)
         print(f"{best_model_name.upper()} - Episode {episode + 1}/{max_episodes}, Total Reward: {total_reward:.2f}")
