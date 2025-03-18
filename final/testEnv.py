@@ -103,13 +103,96 @@ class testEnv(gym.Env):
     
             time.sleep(5)  # ✅ Ensure the attacker moves every 5 seconds
 
+    # def evaluate_honeypot_placement(self):
+    #     """Evaluate nodes and return the best placement decision based on attacker position."""
+    #     best_node = None
+    
+    #     for node in range(self.num_nodes):
+    #         if self.honeypot_positions[node] == 0:  # Only consider empty positions
+    #             if node == self.attacker_position:  # Prioritize intercepting attacker
+    #                 return node  # Instantly return the attacker's position if available
+    #             best_node = node  # Otherwise, pick the first available node
+    
+    #     return best_node  # Return the best candidate (or None if no space left)
+
+    
+    # def place_honeypot(self):
+    #     """Places a honeypot at the best location (attacker’s position if possible)."""
+    #     best_node = self.evaluate_honeypot_placement()
+    
+    #     if best_node is not None and np.sum(self.honeypot_positions) < self.num_honeypots:
+    #         self.honeypot_positions[best_node] = 1
+    #         return 1.0 - self.honeypot_cost  # Flat reward for placement
+    #     else:
+    #         return -self.honeypot_cost  # Penalty if no valid placement
+
     def place_honeypot(self, action):
-        if self.placed_honeypots < self.num_honeypots and self.honeypot_positions[action] == 0:
+        """Places a honeypot at the given node action."""
+        if self.honeypot_positions[action] == 0 and self.placed_honeypots < self.num_honeypots:
             self.honeypot_positions[action] = 1
             self.placed_honeypots += 1
             logging.info(f"Honeypot placed at Node {action}")
             return 0.5
-        return 0  
+        else:
+            logging.warning(f"[!] Honeypot already placed at Node {action}. Selecting a new node...")
+            # Choose a new node to place a honeypot if this one is occupied
+            available_nodes = [i for i in range(self.num_nodes) if self.honeypot_positions[i] == 0]
+            if available_nodes:
+                new_node = np.random.choice(available_nodes)
+                return self.place_honeypot(new_node)
+        return 0
+    # def step(self, action):
+    #     assert self.action_space.contains(action), f"Invalid action: {action}"
+    
+    #     # Place a honeypot with associated cost and get reward
+    #     placement_reward = self.place_honeypot(action)
+    
+    #     # Simulate an attack (attacker moves every step)
+    #     self.attacker_position = np.random.choice(self.num_nodes)
+    #     # Check if the attacker is at a honeypot
+    #     if self.honeypot_positions[self.attacker_position] == 1:
+    #         self.attack_detected[self.attacker_position] = True
+    #         reward = placement_reward + 5.0  # ✅ Reward for catching an attacker
+    #         logging.info(f"[!] Attacker trapped at Node {self.attacker_position}!")
+    #     else:
+    #         reward = placement_reward
+    #     # Update environment state
+    #     self.state = np.random.rand(self.num_nodes) * (1 - self.honeypot_positions)
+    #     self.visualize()
+    
+    #     # End episode when all honeypots are placed
+    #     done = self.placed_honeypots >= self.num_honeypots
+    #     return self.state, reward, done, {}
+
+    def step(self, action):
+        assert self.action_space.contains(action), f"Invalid action: {action}"
+        
+        reward = 0
+        self.step_count += 1  # Increment step count
+        
+        # **Introduce Placement Interval**
+        if self.step_count % self.placement_interval == 0 and self.placed_honeypots < self.num_honeypots:
+            reward += self.place_honeypot(action)  # Place a honeypot only at set intervals
+        
+        # **Simulate Attacker Movement**
+        # self.attacker_position = np.random.choice(self.num_nodes)
+        
+        # **Check if Attacker Steps on Honeypot**
+        if self.honeypot_positions[self.attacker_position] == 1:
+            self.attack_detected[self.attacker_position] = True
+            reward += 5.0  # High reward for trapping an attacker
+            logging.info(f"[!] Attacker trapped at Node {self.attacker_position}!")
+        
+        # **Update Observation State**
+        self.state = 1 - self.honeypot_positions  # Observation: 1 for empty, 0 for honeypot
+        
+        # **End the Episode if All Honeypots Are Placed**
+        done = self.placed_honeypots >= self.num_honeypots
+        
+        self.visualize()  # Display the environment state
+        return self.state, reward, done, {}
+
+
     # def place_honeypot(self, node):
     #     if self.honeypot_positions[node] == 1:
     #         logging.warning(f"[!] Honeypot already placed at Node {node}.")
@@ -155,6 +238,7 @@ class testEnv(gym.Env):
     #     self.visualize()  # ✅ Update visualization
     
     #     return self.state, reward, done, {}
+      
     # def step(self, action):
     #     assert self.action_space.contains(action), f"Invalid action: {action}"
     
@@ -178,31 +262,32 @@ class testEnv(gym.Env):
     
     #     self.visualize()
     #     return self.state, reward, done, {}
-    def step(self, action):
-        assert self.action_space.contains(action), f"Invalid action: {action}"
+  
+    # def step(self, action):
+    #     assert self.action_space.contains(action), f"Invalid action: {action}"
+    
+    #     # Evaluate placement, but do not place yet
+    #     best_node = self.evaluate_honeypot_placement()
+    
+    #     # Place honeypot only if the agent picks the best option
+    #     if action == best_node:
+    #         placement_reward = self.place_honeypot()
+    #     else:
+    #         placement_reward = -0.5  # Small penalty for bad placement
+    
+    #     # Simulate attack
+    #     attack_reward = self.simulate_attack()
+    
+    #     # Combine rewards
+    #     reward = placement_reward + attack_reward
+    #     done = np.sum(self.honeypot_positions) >= self.num_honeypots
+    
+    #     # Update state
+    #     self.state = 1 - self.honeypot_positions  # 1 for empty, 0 for honeypot
+    
+    #     return self.state, reward, done, {}
 
-        # Place a honeypot with associated cost and get reward
-        placement_reward = self.place_honeypot(action)
 
-        # Encourage early honeypot placement (Bonus for placing sooner)
-        if np.sum(self.honeypot_positions) < self.num_honeypots:
-            placement_reward += max(0, 5 - np.sum(self.honeypot_positions))  # Extra reward for early placement
-
-        # Simulate an attack and get the reward
-        attack_reward = self.simulate_attack()
-
-        # Extra bonus for stopping attackers early
-        if attack_reward > 0:
-            attack_reward += max(0, 3 - np.sum(self.honeypot_positions))  # Higher reward if fewer honeypots are placed
-
-        # Total reward combines placement and attack outcomes
-        reward = placement_reward + attack_reward
-        done = np.sum(self.honeypot_positions) >= self.num_honeypots
-
-        # Update the state (e.g., vulnerabilities or honeypot positions)
-        self.state = np.random.rand(self.num_nodes) * (1 - self.honeypot_positions)
-
-        return self.state, reward, done, {}
     
     def visualize(self):
         """

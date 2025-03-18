@@ -54,7 +54,7 @@ def train_best_model(best_model_name, config):
     agent = agent_classes[best_model_name]((env.observation_space.shape[0],), env.action_space.n, config[best_model_name])
 
     max_episodes = 1
-    max_steps = 500
+    max_steps = 100
     episode_rewards = []
 
     for episode in range(max_episodes):
