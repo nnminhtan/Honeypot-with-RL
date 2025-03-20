@@ -125,22 +125,25 @@ class testEnv(gym.Env):
     #         return 1.0 - self.honeypot_cost  # Flat reward for placement
     #     else:
     #         return -self.honeypot_cost  # Penalty if no valid placement
+  
+    # good
+    # def place_honeypot(self, action):
+    #     """Places a honeypot at the given node action."""
+    #     if self.honeypot_positions[action] == 0 and self.placed_honeypots < self.num_honeypots:
+    #         self.honeypot_positions[action] = 1
+    #         self.placed_honeypots += 1
+    #         logging.info(f"Honeypot placed at Node {action}")
+    #         return 0.5
+    #     else:
+    #         logging.warning(f"[!] Honeypot already placed at Node {action}. Selecting a new node...")
+    #         # Choose a new node to place a honeypot if this one is occupied
+    #         available_nodes = [i for i in range(self.num_nodes) if self.honeypot_positions[i] == 0]
+    #         if available_nodes:
+    #             new_node = np.random.choice(available_nodes)
+    #             return self.place_honeypot(new_node)
+    #     return 0
 
-    def place_honeypot(self, action):
-        """Places a honeypot at the given node action."""
-        if self.honeypot_positions[action] == 0 and self.placed_honeypots < self.num_honeypots:
-            self.honeypot_positions[action] = 1
-            self.placed_honeypots += 1
-            logging.info(f"Honeypot placed at Node {action}")
-            return 0.5
-        else:
-            logging.warning(f"[!] Honeypot already placed at Node {action}. Selecting a new node...")
-            # Choose a new node to place a honeypot if this one is occupied
-            available_nodes = [i for i in range(self.num_nodes) if self.honeypot_positions[i] == 0]
-            if available_nodes:
-                new_node = np.random.choice(available_nodes)
-                return self.place_honeypot(new_node)
-        return 0
+  
     # def step(self, action):
     #     assert self.action_space.contains(action), f"Invalid action: {action}"
     
@@ -163,6 +166,38 @@ class testEnv(gym.Env):
     #     # End episode when all honeypots are placed
     #     done = self.placed_honeypots >= self.num_honeypots
     #     return self.state, reward, done, {}
+
+    def place_honeypot(self, action):
+        """Places a honeypot at the given node action and runs LLMhoneypot.py inside the corresponding container."""
+        if self.honeypot_positions[action] == 0 and self.placed_honeypots < self.num_honeypots:
+            self.honeypot_positions[action] = 1
+            self.placed_honeypots += 1
+            logging.info(f"Honeypot placed at Node {action}")
+    
+            # Match the container name format from create_docker_network
+            container_name = f"node_{action+1}"  # Adjusted to match node index
+    
+            # Run LLMhoneypot.py inside the corresponding container in the background
+            try:
+                subprocess.Popen(
+                    ["docker", "exec", "-d", container_name, "python3", "LLMhoneypot.py"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                logging.info(f"Started LLMhoneypot.py in container {container_name}")
+            except Exception as e:
+                logging.error(f"Failed to start LLMhoneypot.py in {container_name}: {e}")
+    
+            return 0.5
+        else:
+            logging.warning(f"[!] Honeypot already placed at Node {action}. Selecting a new node...")
+            # Choose a new node to place a honeypot if this one is occupied
+            available_nodes = [i for i in range(self.num_nodes) if self.honeypot_positions[i] == 0]
+            if available_nodes:
+                new_node = np.random.choice(available_nodes)
+                return self.place_honeypot(new_node)
+        
+        return 0
 
     def step(self, action):
         assert self.action_space.contains(action), f"Invalid action: {action}"
