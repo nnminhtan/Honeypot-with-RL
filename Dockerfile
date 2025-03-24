@@ -96,5 +96,5 @@ RUN pip install -r requirements.txt
 # Start SSH when the container starts
 # CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D"]
 # CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D" , "echo 'Container is running' && tail -f /dev/null"]
-CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D & echo 'Container is running' | tee -a /app/container.log && tail -f /app/container.log"]
-# CMD [ "/bin/bash", "-c", "python main.py" ]
+# CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D & echo 'Container is running' | tee -a /app/container.log && tail -f /app/container.log"]
+CMD [ "/bin/bash", "-c", "python main.py & /usr/sbin/sshd -D" ]
