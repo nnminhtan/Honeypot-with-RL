@@ -5,6 +5,8 @@ import requests
 from datetime import datetime
 import yaml
 import os
+import sys
+import time
 
 #load environment variables from .env file
 load_dotenv()
@@ -84,17 +86,33 @@ def main():
     # Initialize dynamic user and host variables
     user = "user"  # Default user
     host = "awesome-server"  # Default host
+    predefined_inputs = ["", "whoami", "ping 192.168.1.1"]   
+    index = 0
 
     while True:
         try:
                 
         #     # Print the dynamic prompt before the user input without the extra symbols
         #     # print(f"[{user}@{host}:~]$", end=' ')  # Adjust the prompt display
-            print("Enter a command:")
-            user_input = input(f"{user}@{host}:~$ ").strip()
-
+            # print("Enter a command:")
+            # if sys.stdin.isatty():
+            # user_input = input().strip()
+            # else:
+            # user_input = sys.stdin.read().strip()
             # user_input = input(f"{user}@{host}:~$ ")
-            print(f"You entered: {user_input}")
+            # print(f"You entered: {user_input}")
+
+            if index < len(predefined_inputs):
+                user_input = predefined_inputs[index]
+                index += 1
+                time.sleep(4)
+            else:
+                user_input = input().strip()  # After predefined inputs, use real user input
+
+            # If the input is empty (Enter key press), print a blank line
+            if user_input == "":
+                print()
+                continue  # Skip processing for blank input
             # Generate a response based on user input
             prompt_text = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages]) + f"\nuser: {user_input}\n"
 

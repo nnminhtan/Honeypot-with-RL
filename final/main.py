@@ -45,13 +45,16 @@ def create_docker_nodes(num_nodes):
         container_name = f"node_{i+1}"
         
         # Start container
-        subprocess.run(["docker", "run", "-d", "--network", "honeypot_network",
-                        "--name", container_name, "honeypot-ssh-image"])
-
+        subprocess.run(["docker", "run", "-dit", "--network", "honeypot_network",
+                        "--name", container_name, "llmhp"])
+        subprocess.run(["docker", "network", "connect", "external_network", container_name])
+        
         # Get container IP address
-        result = subprocess.run(["docker", "inspect", "-f",
-                                 "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
-                                 container_name], capture_output=True, text=True)
+        result = subprocess.run(
+            ["docker", "inspect", "-f",
+             "{{.NetworkSettings.Networks.honeypot_network.IPAddress}}",
+             container_name], capture_output=True, text=True
+        )
         ip_address = result.stdout.strip()
         node_ips[i] = ip_address
 

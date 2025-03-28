@@ -48,6 +48,10 @@ class testEnv(gym.Env):
         attack_thread = threading.Thread(target=self.simulate_attack, daemon=True)
         attack_thread.start()
 
+        # **Start SSH Login Monitoring in a Separate Thread**
+        ssh_monitor_thread = threading.Thread(target=self.monitor_ssh_logins, daemon=True)
+        ssh_monitor_thread.start()
+
     def setup_ssh_connections(self):
         for node_id, ip in self.node_ips.items():
             ssh = paramiko.SSHClient()
@@ -58,6 +62,24 @@ class testEnv(gym.Env):
                 logging.info(f"Connected to Node {node_id} at {ip} via SSH.")
             except Exception as e:
                 logging.error(f"Failed to SSH into Node {node_id} ({ip}): {e}")
+
+    def monitor_ssh_logins(self):
+        """Continuously checks for active SSH logins on each node."""
+        while True:
+            for node_id, ip in self.node_ips.items():
+                try:
+                    result = subprocess.run(
+                        ["ssh", "-o", "StrictHostKeyChecking=no", ip, "who"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.stdout.strip():
+                        logging.info(f"SSH detected on {ip} (Node {node_id}):\n{result.stdout.strip()}")
+                        print(f"SSH detected on {ip} (Node {node_id}):\n{result.stdout.strip()}")
+                except Exception as e:
+                    # logging.error(f"Error checking SSH logins on {ip}: {str(e)}")
+                    logging.error("")
+
+            time.sleep(10)
 
     def simulate_attack(self):
         """ Simulates an SSH attack on a random node every 5 seconds. """
@@ -166,7 +188,6 @@ class testEnv(gym.Env):
     
         print("\nEnvironment State: " + " | ".join(env_state))
 
-
     def reset(self):
         self.state = np.random.rand(self.num_nodes)
         self.honeypot_positions = np.zeros(self.num_nodes)
@@ -180,3 +201,4 @@ class testEnv(gym.Env):
         for ssh in self.ssh_clients.values():
             ssh.close()
         logging.info("All SSH connections closed.")
+
