@@ -1,4 +1,5 @@
 # DACN
+Go to [Google Gemini](https://ai.google.dev/gemini-api/docs/api-key) to get api key and add to .env in the /final before execute the commands
 
 Run these commands
 
