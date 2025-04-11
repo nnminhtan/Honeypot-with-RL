@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class HoneypotEnv(gym.Env):
-    def __init__(self, num_nodes, num_honeypots, honeypot_cost, malicious_ips):
+    def __init__(self, num_nodes, num_honeypots, honeypot_cost, malicious_ips, max_steps):
         super(HoneypotEnv, self).__init__()
         self.num_nodes = num_nodes
         self.num_honeypots = num_honeypots
@@ -12,7 +12,8 @@ class HoneypotEnv(gym.Env):
         self.malicious_ips = malicious_ips  # List of malicious IP addresses (from the CSV)
         self.action_space = spaces.Discrete(num_nodes)
         self.observation_space = spaces.Box(low=0, high=1, shape=(num_nodes,), dtype=np.float32)
-
+        self.max_steps = max_steps  # <-- Add this
+        self.current_step = 0
         self.state = None
         self.honeypot_positions = np.zeros(num_nodes)
         self.vulnerabilities = np.random.rand(num_nodes)
@@ -23,7 +24,9 @@ class HoneypotEnv(gym.Env):
         self.honeypot_positions = np.zeros(self.num_nodes)
         self.vulnerabilities = np.random.rand(self.num_nodes)
         self.attacker_position = np.random.choice(self.num_nodes)
+        self.current_step = 0  # <-- Reset step count here
         return self.state
+
 
     def place_honeypot(self, action):
         """Place a honeypot with a cost, if we haven't reached the honeypot limit."""
@@ -35,39 +38,84 @@ class HoneypotEnv(gym.Env):
             return self.honeypot_cost  # Penalty if exceeding honeypot limits or redundant placement
 
     def simulate_attack(self):
-        """Move the attacker to a new node each step and check for interception."""
-        self.attacker_position = np.random.choice(self.num_nodes)
-        
-        # Check if the attacker's IP is malicious (based on provided malicious_ips)
-        # Simulate mapping each node position to an IP address, here assuming nodes are mapped to IPs like "SrcIP1", "SrcIP2", etc.
-        attacker_ip = f"Src IP{self.attacker_position + 1}"  # Example: mapping node to an IP (adjust logic as needed)
-        is_malicious = attacker_ip in self.malicious_ips
-        
-        if self.honeypot_positions[self.attacker_position] == 1:  # Honeypot intercepts attacker
-            if is_malicious:
-                return 5.0  # High reward for intercepting malicious traffic
+        """Simulates an attacker choosing a target node based on attack strategy (broad or targeted)."""
+
+        # Randomly choose attack type (70% broad, 30% targeted for example)
+        # attack_type = np.random.choice(["broad", "targeted"], p=[0.7, 0.3])
+        attack_type = "targeted"
+        if attack_type == "broad":
+            # Broad attack: randomly choose a node
+            self.attacker_position = np.random.choice(self.num_nodes)
+
+        elif attack_type == "targeted":
+            # Targeted attack: choose from high vulnerability nodes (e.g., top 30%)
+            threshold = np.percentile(self.vulnerabilities, 70)
+            vulnerable_nodes = [i for i, v in enumerate(self.vulnerabilities) if v >= threshold]
+            
+            if vulnerable_nodes:
+                self.attacker_position = np.random.choice(vulnerable_nodes)
             else:
-                return -1.0  # Penalty for intercepting normal traffic
+                # Fallback to random if no vulnerable nodes found
+                self.attacker_position = np.random.choice(self.num_nodes)
+
+        # Map attacker position to an IP for malicious IP check
+        attacker_ip = f"Src IP{self.attacker_position + 1}"
+        is_malicious = attacker_ip in self.malicious_ips
+
+        # Honeypot interception logic
+        if self.honeypot_positions[self.attacker_position] == 1:
+            if is_malicious:
+                return 5.0  # reward for catching malicious
+            else:
+                return -1.0  # penalty for intercepting normal
         else:
-            return -1.0  # Penalty if the attacker reaches an unprotected node
+            return -1.0  # attacker succeeded, nothing caught
 
     def step(self, action):
         assert self.action_space.contains(action), f"Invalid action: {action}"
 
-        # Place a honeypot with associated cost and get reward
-        placement_reward = self.place_honeypot(action)
+        reward = 0.0
 
-        # Simulate an attack and get the reward
+        # --- Step 1: Try placing a honeypot ---
+        placement_reward = self.place_honeypot(action)
+        reward += placement_reward  # usually ~0.5 for good placement
+
+        # --- Step 2: Simulate attacker behavior ---
         attack_reward = self.simulate_attack()
 
-        # Total reward combines placement and attack outcomes
-        reward = placement_reward + attack_reward
-        done = np.sum(self.honeypot_positions) >= self.num_honeypots
+        # Check if attacker is on a honeypot
+        is_honeypot = self.honeypot_positions[self.attacker_position] == 1
+        is_malicious = f"Src IP{self.attacker_position + 1}" in self.malicious_ips
 
-        # Update the state (e.g., vulnerabilities or honeypot positions)
+        # --- Step 3: Reward for interception or penalty ---
+        if is_honeypot and is_malicious:
+            reward += 10.0  # big reward for catching malicious
+        elif is_honeypot and not is_malicious:
+            reward -= 0.5   # small penalty for trapping normal traffic
+        elif not is_honeypot and np.sum(self.honeypot_positions) >= self.num_honeypots:
+            reward += 0.2   # small survival bonus for avoiding trap
+
+        # --- Step 4: Prevent over-penalizing missed attacks ---
+        if np.sum(self.honeypot_positions) >= self.num_honeypots and attack_reward == -1.0:
+            attack_reward = 0.0  # no penalty if agent is done placing
+        reward += attack_reward
+
+        # --- Step 5: Done conditions ---
+        self.current_step += 1
+        done = False
+
+        # Early success: end if malicious attacker is caught
+        if is_honeypot and is_malicious:
+            done = True
+
+        # End if max steps reached
+        if self.current_step >= self.max_steps:
+            done = True
+
+        # --- Step 6: Update state (ignore nodes with honeypots) ---
         self.state = np.random.rand(self.num_nodes) * (1 - self.honeypot_positions)
+        return self.state.reshape(1, -1), reward, done, {}
 
-        return self.state, reward, done, {}
 
     def render(self, mode="human"):
         print(f"Honeypot positions: {self.honeypot_positions}")
